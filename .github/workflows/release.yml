@@ -1,8 +1,9 @@
 name: Build and Release Distributions
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -26,9 +27,12 @@ jobs:
           cd godot_addon
           zip -r ../metamagic_godot.zip metamagic/
 
-      - name: Upload Release Assets
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: |
             metamagic_blender.zip
             metamagic_godot.zip
