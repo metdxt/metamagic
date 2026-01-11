@@ -1,0 +1,33 @@
+name: Build and Release Distributions
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Blender Addon ZIP
+        run: |
+          cd blender_addon
+          zip -r ../metamagic_blender.zip metamagic/
+
+      - name: Create Godot Addon ZIP
+        run: |
+          cd godot_addon
+          zip -r ../metamagic_godot.zip metamagic/
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            metamagic_blender.zip
+            metamagic_godot.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
