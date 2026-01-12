@@ -1,6 +1,8 @@
-import bpy
 import json
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
+import bpy
+
 from .properties import JiggleChainProperty, JiggleConfigProperty
 
 
@@ -14,7 +16,7 @@ def get_jiggle_config(obj: bpy.types.Object) -> Optional[JiggleConfigProperty]:
     Returns:
         JiggleConfigProperty if found, None otherwise
     """
-    if obj and obj.type == 'ARMATURE' and hasattr(obj, 'jiggle_config'):
+    if obj and obj.type == "ARMATURE" and hasattr(obj, "jiggle_config"):
         return obj.jiggle_config
     return None
 
@@ -29,7 +31,7 @@ def save_jiggle_config_to_custom_properties(obj: bpy.types.Object) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    if not obj or obj.type != 'ARMATURE':
+    if not obj or obj.type != "ARMATURE":
         return False
 
     config = get_jiggle_config(obj)
@@ -38,7 +40,7 @@ def save_jiggle_config_to_custom_properties(obj: bpy.types.Object) -> bool:
 
     try:
         json_string = config.to_json()
-        obj['jiggle_bones_config'] = json_string
+        obj["jiggle_bones_config"] = json_string
         return True
     except Exception:
         return False
@@ -54,16 +56,16 @@ def load_jiggle_config_from_custom_properties(obj: bpy.types.Object) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    if not obj or obj.type != 'ARMATURE':
+    if not obj or obj.type != "ARMATURE":
         return False
 
     config = get_jiggle_config(obj)
     if not config:
         return False
 
-    if 'jiggle_bones_config' in obj:
+    if "jiggle_bones_config" in obj:
         try:
-            config.from_json(obj['jiggle_bones_config'])
+            config.from_json(obj["jiggle_bones_config"])
             return True
         except json.JSONDecodeError:
             return False
@@ -71,7 +73,9 @@ def load_jiggle_config_from_custom_properties(obj: bpy.types.Object) -> bool:
     return False
 
 
-def get_bones_in_chain(obj: bpy.types.Object, start_bone: str, end_bone: str) -> List[str]:
+def get_bones_in_chain(
+    obj: bpy.types.Object, start_bone: str, end_bone: str
+) -> List[str]:
     """
     Get the list of bones in a chain from start to end bone.
 
@@ -83,7 +87,7 @@ def get_bones_in_chain(obj: bpy.types.Object, start_bone: str, end_bone: str) ->
     Returns:
         List of bone names in the chain, empty list if chain is invalid
     """
-    if not obj or obj.type != 'ARMATURE':
+    if not obj or obj.type != "ARMATURE":
         return []
 
     armature = obj.data
@@ -120,7 +124,9 @@ def get_bones_in_chain(obj: bpy.types.Object, start_bone: str, end_bone: str) ->
     return []
 
 
-def validate_jiggle_chain(obj: bpy.types.Object, start_bone: str, end_bone: str) -> tuple[bool, str]:
+def validate_jiggle_chain(
+    obj: bpy.types.Object, start_bone: str, end_bone: str
+) -> tuple[bool, str]:
     """
     Validate if a jiggle chain is valid for the given armature.
 
@@ -132,7 +138,7 @@ def validate_jiggle_chain(obj: bpy.types.Object, start_bone: str, end_bone: str)
     Returns:
         Tuple of (is_valid, error_message)
     """
-    if not obj or obj.type != 'ARMATURE':
+    if not obj or obj.type != "ARMATURE":
         return False, "Object is not an armature"
 
     if not start_bone:
@@ -168,12 +174,12 @@ def export_jiggle_config_to_dict(obj: bpy.types.Object) -> Dict[str, Any]:
     if not config:
         return {"chains": []}
 
-    return {
-        "chains": [chain.to_dict() for chain in config.chains]
-    }
+    return {"chains": [chain.to_dict() for chain in config.chains]}
 
 
-def import_jiggle_config_from_dict(obj: bpy.types.Object, config_dict: Dict[str, Any]) -> bool:
+def import_jiggle_config_from_dict(
+    obj: bpy.types.Object, config_dict: Dict[str, Any]
+) -> bool:
     """
     Import jiggle configuration from a dictionary.
 
@@ -195,6 +201,11 @@ def import_jiggle_config_from_dict(obj: bpy.types.Object, config_dict: Dict[str,
             chain = config.chains.add()
             chain.start_bone = chain_data.get("start_bone", "")
             chain.end_bone = chain_data.get("end_bone", "")
+            chain.stiffness = chain_data.get("stiffness", 1.0)
+            chain.drag = chain_data.get("drag", 0.4)
+            chain.gravity = chain_data.get("gravity", 0.0)
+            chain.radius = chain_data.get("radius", 0.02)
+            chain.extend_end_bone = chain_data.get("extend_end_bone", False)
 
         save_jiggle_config_to_custom_properties(obj)
         return True
