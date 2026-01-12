@@ -16,7 +16,7 @@ bl_info = {
     "author": "METDXT",
     "description": "Advancing blender to godot pipeline with metadata!",
     "blender": (4, 2, 0),
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "location": "",
     "warning": "",
     "category": "Import-Export",
