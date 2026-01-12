@@ -1,7 +1,14 @@
-import bpy
-from bpy.types import PropertyGroup
-from bpy.props import StringProperty, CollectionProperty, PointerProperty, FloatProperty, BoolProperty
 import json
+
+import bpy
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    FloatProperty,
+    PointerProperty,
+    StringProperty,
+)
+from bpy.types import PropertyGroup
 
 
 def update_chain_property(self, context):
@@ -23,36 +30,37 @@ def update_chain_property(self, context):
             if prop_path:
                 obj = context.path_resolve(prop_path, False)
                 # If we got a property group, get its id_data
-                if hasattr(obj, 'id_data'):
+                if hasattr(obj, "id_data"):
                     obj = obj.id_data
         except (AttributeError, ValueError):
             pass
 
     # If we have a valid armature object, update its custom properties
-    if obj and obj.type == 'ARMATURE' and hasattr(obj, 'jiggle_config'):
+    if obj and obj.type == "ARMATURE" and hasattr(obj, "jiggle_config"):
         try:
             json_string = obj.jiggle_config.to_json()
-            obj['jiggle_bones_config'] = json_string
+            obj["jiggle_bones_config"] = json_string
         except Exception as e:
             pass
 
 
 class JiggleChainProperty(PropertyGroup):
     """Configuration for a single jiggle bone chain"""
+
     bl_idname = "jiggle_chain"
 
     start_bone: StringProperty(
         name="Start Bone",
         description="First bone in the jiggle chain",
         default="",
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     end_bone: StringProperty(
         name="End Bone",
         description="Last bone in the jiggle chain",
         default="",
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     stiffness: FloatProperty(
@@ -61,7 +69,7 @@ class JiggleChainProperty(PropertyGroup):
         default=1.0,
         soft_min=0.0,
         soft_max=10.0,
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     drag: FloatProperty(
@@ -70,7 +78,7 @@ class JiggleChainProperty(PropertyGroup):
         default=0.4,
         soft_min=0.0,
         soft_max=10.0,
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     gravity: FloatProperty(
@@ -79,7 +87,7 @@ class JiggleChainProperty(PropertyGroup):
         default=0.0,
         soft_min=0.0,
         soft_max=100.0,
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     radius: FloatProperty(
@@ -88,14 +96,14 @@ class JiggleChainProperty(PropertyGroup):
         default=0.02,
         soft_min=0.0,
         soft_max=10.0,
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     extend_end_bone: BoolProperty(
         name="Extend End Bone",
         description="Whether to extend the end bone for the chain",
         default=False,
-        update=update_chain_property
+        update=update_chain_property,
     )
 
     def to_dict(self):
@@ -107,24 +115,22 @@ class JiggleChainProperty(PropertyGroup):
             "drag": self.drag,
             "gravity": self.gravity,
             "radius": self.radius,
-            "extend_end_bone": self.extend_end_bone
+            "extend_end_bone": self.extend_end_bone,
         }
 
 
 class JiggleConfigProperty(PropertyGroup):
     """Collection of jiggle bone chains for an armature"""
+
     bl_idname = "jiggle_config"
 
     chains: CollectionProperty(
         type=JiggleChainProperty,
         name="Jiggle Chains",
-        description="List of jiggle bone chains"
+        description="List of jiggle bone chains",
     )
 
-    active_chain_index: bpy.props.IntProperty(
-        name="Active Chain Index",
-        default=0
-    )
+    active_chain_index: bpy.props.IntProperty(name="Active Chain Index", default=0)
 
     def to_json(self):
         """Convert all chains to JSON string"""

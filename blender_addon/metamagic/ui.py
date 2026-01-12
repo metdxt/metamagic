@@ -134,6 +134,10 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
             return {"CANCELLED"}
 
         selected_bones = [b.name for b in context.selected_bones]
+
+        # Filter bones to use only one side when mirrored bones are present
+        selected_bones = self.filter_bones_by_side(selected_bones)
+
         if len(selected_bones) < 2:
             self.report({"WARNING"}, "Select at least 2 bones")
             return {"CANCELLED"}
@@ -144,11 +148,66 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
 
         # Force update custom property
         force_update_config(self, context)
+
         self.report(
             {"INFO"}, f"Set chain from '{selected_bones[0]}' to '{selected_bones[-1]}'"
         )
 
         return {"FINISHED"}
+
+    def filter_bones_by_side(self, bone_names):
+        """
+        Filter bones to use only one side when mirrored bones are present.
+        This handles Blender's X-axis mirror feature which automatically
+        includes both left and right bones in the selection.
+
+        When mirrored pairs are detected, keeps only the side matching the first bone.
+        """
+        if not bone_names or len(bone_names) < 2:
+            return bone_names
+
+        # Extract the side suffix from the first bone
+        first_bone = bone_names[0]
+        first_parts = first_bone.rsplit(".", 1)[0]
+        if "_" in first_parts:
+            target_side = first_parts.rsplit("_", 1)[-1]
+            has_side = True
+        else:
+            target_side = ""
+            has_side = False
+
+        # If first bone has no side suffix, no filtering needed
+        if not has_side:
+            return bone_names
+
+        # Check if we have mirrored pairs (bones with same base name but different _L/_R)
+        has_mirrored_pairs = False
+        for bone_name in bone_names[1:]:
+            parts = bone_name.rsplit(".", 1)[0]
+            if "_" in parts:
+                side = parts.rsplit("_", 1)[-1]
+                if side and side != target_side:
+                    has_mirrored_pairs = True
+                    break
+
+        # If no mirrored pairs detected, return original list
+        if not has_mirrored_pairs:
+            return bone_names
+
+        # Filter to keep only bones matching the first bone's side
+        filtered_bones = []
+        for bone_name in bone_names:
+            parts = bone_name.rsplit(".", 1)[0]
+            if "_" in parts:
+                side = parts.rsplit("_", 1)[-1]
+                # Keep bones that match the target side OR have no side suffix
+                if side == target_side or side == "":
+                    filtered_bones.append(bone_name)
+            else:
+                # Bone has no side suffix - keep it
+                filtered_bones.append(bone_name)
+
+        return filtered_bones if filtered_bones else bone_names
 
 
 class JIGGLE_PT_jiggle_bones(Panel):
