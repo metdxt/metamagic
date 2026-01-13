@@ -210,6 +210,202 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
         return filtered_bones if filtered_bones else bone_names
 
 
+class JIGGLE_OT_create_rotation_chain(Operator):
+    """Create copy rotation constraints for a bone chain"""
+
+    bl_idname = "jiggle.create_rotation_chain"
+    bl_label = "Create Rotation Chain"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = "Add Copy Rotation constraints to each bone (except first) to copy from the previous bone in the hierarchy. Constraints use LOCAL space for additive rotation."
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != "ARMATURE":
+            self.report({"ERROR"}, "No armature selected")
+            return {"CANCELLED"}
+
+        if context.mode != "EDIT_ARMATURE":
+            self.report({"WARNING"}, "Select bones in Edit Mode")
+            return {"CANCELLED"}
+
+        # Get selected bone names
+        selected_bone_names = [b.name for b in context.selected_bones]
+
+        if len(selected_bone_names) < 2:
+            self.report({"WARNING"}, "Select at least 2 bones")
+            return {"CANCELLED"}
+
+        # Find the topmost bone (highest in hierarchy) among selected bones
+        armature = obj.data
+        top_bone = self.find_topmost_bone(armature, selected_bone_names)
+
+        if not top_bone:
+            self.report(
+                {"ERROR"},
+                "Could not determine bone hierarchy - check parent relationships",
+            )
+            return {"CANCELLED"}
+
+        # Build the chain from top to bottom
+        chain, is_linear, branch_bone = self.build_chain_from_top(
+            top_bone, selected_bone_names
+        )
+
+        if len(chain) < 2:
+            self.report({"ERROR"}, "Chain must have at least 2 bones")
+            return {"CANCELLED"}
+
+        # Validate that all selected bones are in the chain
+        missing_bones = set(selected_bone_names) - set(chain)
+        if missing_bones:
+            self.report(
+                {"WARNING"},
+                f"Selected bones not in chain: {', '.join(sorted(missing_bones))}",
+            )
+
+        # Check if chain is linear
+        if not is_linear:
+            self.report(
+                {"WARNING"},
+                f"Multiple branches detected at '{branch_bone}' - rotation chain may not work as expected",
+            )
+
+        # Switch to object mode to add constraints
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+        # Add Copy Rotation constraints to each bone (except the first)
+        for i in range(1, len(chain)):
+            bone_name = chain[i]
+            prev_bone_name = chain[i - 1]
+
+            # Get the pose bone
+            pose_bone = obj.pose.bones.get(bone_name)
+            if not pose_bone:
+                self.report({"ERROR"}, f"Could not find pose bone: {bone_name}")
+                continue
+
+            # Check if constraint already exists
+            existing_constraint = None
+            for constraint in pose_bone.constraints:
+                if constraint.type == "COPY_ROTATION" and constraint.target == obj:
+                    existing_constraint = constraint
+                    break
+
+            if existing_constraint:
+                # Update existing constraint
+                existing_constraint.subtarget = prev_bone_name
+                existing_constraint.owner_space = "LOCAL"
+                existing_constraint.target_space = "LOCAL"
+                existing_constraint.influence = 1.0
+            else:
+                # Create the Copy Rotation constraint
+                constraint = pose_bone.constraints.new(type="COPY_ROTATION")
+                constraint.target = obj
+                constraint.subtarget = prev_bone_name
+                constraint.owner_space = "LOCAL"
+                constraint.target_space = "LOCAL"
+                constraint.influence = 1.0
+
+        # Switch back to edit mode
+        bpy.ops.object.mode_set(mode="EDIT")
+
+        self.report({"INFO"}, f"Created rotation chain with {len(chain)} bones")
+        return {"FINISHED"}
+
+    def find_topmost_bone(self, armature, selected_bones):
+        """
+        Find the bone that is highest in the hierarchy among the selected bones.
+        This is the bone that is not a child of any other selected bone.
+        """
+        # Check each selected bone to see if it's the topmost
+        for bone_name in selected_bones:
+            bone = armature.bones.get(bone_name)
+            if not bone:
+                continue
+
+            # Walk up the parent chain
+            is_topmost = True
+            current_bone = bone.parent
+
+            while current_bone:
+                if current_bone.name in selected_bones:
+                    # This bone has a selected parent, so it's not the topmost
+                    is_topmost = False
+                    break
+                current_bone = current_bone.parent
+
+            if is_topmost:
+                return bone
+
+        return None
+
+    def build_chain_from_top(self, top_bone, selected_bones):
+        """
+        Build a list of bones in order from top to bottom, following a linear chain
+        of children that are in the selection.
+
+        Returns:
+            tuple: (chain_list, is_linear, branch_bone_name_or_None)
+        """
+        chain = []
+        current_bone = top_bone
+        armature = top_bone.id_data
+        is_linear = True
+        branch_bone = None
+
+        while current_bone:
+            if current_bone.name in selected_bones:
+                chain.append(current_bone.name)
+
+                # Find children of this bone that are in the selection
+                children_in_selection = []
+                for bone in armature.bones:
+                    if bone.parent == current_bone and bone.name in selected_bones:
+                        children_in_selection.append(bone)
+
+                # For a linear chain, we expect at most one child in the selection
+                if len(children_in_selection) == 0:
+                    # End of chain
+                    break
+                elif len(children_in_selection) == 1:
+                    # Continue down the chain
+                    current_bone = children_in_selection[0]
+                else:
+                    # Multiple children in selection - not a linear chain
+                    # For this case, we'll use breadth-first to include all
+                    # but this is less ideal for rotation chains
+                    is_linear = False
+                    branch_bone = current_bone.name
+                    bfs_chain = self.build_chain_bfs(top_bone, selected_bones)
+                    return (bfs_chain, is_linear, branch_bone)
+            else:
+                break
+
+        return (chain, is_linear, branch_bone)
+
+    def build_chain_bfs(self, top_bone, selected_bones):
+        """
+        Build a list of bones using breadth-first search.
+        This is a fallback when multiple branches are detected.
+        """
+        chain = []
+        bones_to_visit = [top_bone]
+
+        while bones_to_visit:
+            current_bone = bones_to_visit.pop(0)
+
+            if current_bone.name in selected_bones:
+                chain.append(current_bone.name)
+
+                # Find children that are in the selection
+                armature = top_bone.id_data
+                for bone in armature.bones:
+                    if bone.parent == current_bone and bone.name in selected_bones:
+                        bones_to_visit.append(bone)
+
+        return chain
+
+
 class JIGGLE_PT_jiggle_bones(Panel):
     """Panel for configuring jiggle bone physics"""
 
@@ -334,6 +530,52 @@ class JIGGLE_PT_jiggle_bones(Panel):
 
         # Force update button
         status_box.operator("jiggle.force_update", icon="FILE_REFRESH")
+
+
+class JIGGLE_PT_utilities(Panel):
+    """Panel for various armature utilities"""
+
+    bl_label = "Utilities"
+    bl_idname = "JIGGLE_PT_utilities"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Metamagic"
+    bl_order = 200
+
+    @classmethod
+    def poll(cls, context):
+        """Only show panel when an armature is selected"""
+        obj = context.active_object
+        if not obj:
+            return False
+        if obj.type != "ARMATURE":
+            return False
+        return True
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+
+        if not obj or obj.type != "ARMATURE":
+            return
+
+        # Rotation chain section
+        box = layout.box()
+        box.label(text="Rotation Chains", icon="LINKED")
+
+        # Create rotation chain button
+        row = box.row()
+        if context.mode == "EDIT_ARMATURE":
+            row.operator("jiggle.create_rotation_chain", icon="CONSTRAINT")
+        else:
+            row.label(text="Enter Edit Mode to create rotation chains", icon="INFO")
+
+        # Instructions
+        if context.mode == "EDIT_ARMATURE":
+            info_row = box.row()
+            info_row.label(
+                text="Select 2+ bones in hierarchy, then click above", icon="INFO"
+            )
 
 
 def force_update_config(op, context):

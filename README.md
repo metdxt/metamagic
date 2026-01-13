@@ -33,6 +33,20 @@ _Advancing blender to godot pipeline with metadata!_
 
 ![Jiggle Physics Demo](./demo_screenshots/demo_jiggle.png)
 
+### Rotation Chain Utilities
+
+Automate the creation of bone rotation constraints with a single click:
+
+1.  **Select Bones:** Enter Edit Mode and select a chain of bones (at least 2 bones) in your armature hierarchy
+2.  **Create Chain:** Open the **Metamagic** panel (N-Panel), go to the **Utilities** section, and click "Create Rotation Chain"
+3.  **Done:** The operator automatically adds Copy Rotation constraints to each bone (except the topmost), configured with LOCAL space for additive rotation
+
+**Features:**
+- Smart hierarchy detection - automatically finds the topmost bone
+- Linear chain following - follows bone hierarchy from parent to child
+- Branch detection with warnings - alerts when multiple branches are detected
+- Constraint management - updates existing constraints instead of creating duplicates
+
 ---
 
 ## Installation
