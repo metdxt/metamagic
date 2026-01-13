@@ -5,10 +5,17 @@ from bpy.props import (
     BoolProperty,
     CollectionProperty,
     FloatProperty,
-    PointerProperty,
     StringProperty,
 )
 from bpy.types import PropertyGroup
+
+from .constants import (
+    DEFAULT_DRAG,
+    DEFAULT_GRAVITY,
+    DEFAULT_RADIUS,
+    DEFAULT_STIFFNESS,
+    JIGGLE_CONFIG_KEY,
+)
 
 
 def update_chain_property(self, context):
@@ -39,9 +46,9 @@ def update_chain_property(self, context):
     if obj and obj.type == "ARMATURE" and hasattr(obj, "jiggle_config"):
         try:
             json_string = obj.jiggle_config.to_json()
-            obj["jiggle_bones_config"] = json_string
+            obj[JIGGLE_CONFIG_KEY] = json_string
         except Exception as e:
-            pass
+            print(f"[Metamagic] Error updating chain property: {e}")
 
 
 class JiggleChainProperty(PropertyGroup):
@@ -66,7 +73,7 @@ class JiggleChainProperty(PropertyGroup):
     stiffness: FloatProperty(
         name="Stiffness",
         description="How resistant the bones are to moving",
-        default=1.0,
+        default=DEFAULT_STIFFNESS,
         soft_min=0.0,
         soft_max=10.0,
         update=update_chain_property,
@@ -75,7 +82,7 @@ class JiggleChainProperty(PropertyGroup):
     drag: FloatProperty(
         name="Drag",
         description="Air resistance that slows down the jiggle",
-        default=0.4,
+        default=DEFAULT_DRAG,
         soft_min=0.0,
         soft_max=10.0,
         update=update_chain_property,
@@ -84,7 +91,7 @@ class JiggleChainProperty(PropertyGroup):
     gravity: FloatProperty(
         name="Gravity",
         description="Magnitude of gravity affecting the chain",
-        default=0.0,
+        default=DEFAULT_GRAVITY,
         soft_min=0.0,
         soft_max=100.0,
         update=update_chain_property,
@@ -93,7 +100,7 @@ class JiggleChainProperty(PropertyGroup):
     radius: FloatProperty(
         name="Radius",
         description="Collision radius for the jiggle bones",
-        default=0.02,
+        default=DEFAULT_RADIUS,
         soft_min=0.0,
         soft_max=10.0,
         update=update_chain_property,
@@ -138,18 +145,34 @@ class JiggleConfigProperty(PropertyGroup):
         return json.dumps(chains_list, indent=2)
 
     def from_json(self, json_string):
-        """Load chains from JSON string"""
+        """Load chains from JSON string
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
             chains_data = json.loads(json_string)
+
+            # Validate structure before clearing existing chains
+            if not isinstance(chains_data, list):
+                return False
+
+            # Validate each chain entry
+            for chain_data in chains_data:
+                if not isinstance(chain_data, dict):
+                    return False
+
+            # Only clear chains if validation passes
             self.chains.clear()
             for chain_data in chains_data:
                 chain = self.chains.add()
                 chain.start_bone = chain_data.get("start_bone", "")
                 chain.end_bone = chain_data.get("end_bone", "")
-                chain.stiffness = chain_data.get("stiffness", 1.0)
-                chain.drag = chain_data.get("drag", 0.4)
-                chain.gravity = chain_data.get("gravity", 0.0)
-                chain.radius = chain_data.get("radius", 0.02)
+                chain.stiffness = chain_data.get("stiffness", DEFAULT_STIFFNESS)
+                chain.drag = chain_data.get("drag", DEFAULT_DRAG)
+                chain.gravity = chain_data.get("gravity", DEFAULT_GRAVITY)
+                chain.radius = chain_data.get("radius", DEFAULT_RADIUS)
                 chain.extend_end_bone = chain_data.get("extend_end_bone", False)
-        except json.JSONDecodeError:
-            pass
+            return True
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return False

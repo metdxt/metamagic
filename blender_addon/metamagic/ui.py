@@ -1,7 +1,39 @@
+import re
+
 import bpy
 from bpy.types import Operator, Panel, UIList
 
-from .properties import JiggleChainProperty, JiggleConfigProperty
+from .constants import (
+    BONE_SUFFIX_PATTERNS,
+    CONSTRAINT_INFLUENCE,
+    CONSTRAINT_OWNER_SPACE,
+    CONSTRAINT_TARGET_SPACE,
+    CONSTRAINT_TYPE,
+    ERROR_HIERARCHY_INVALID,
+    ERROR_MIN_BONES_REQUIRED,
+    ERROR_NEED_EDIT_MODE,
+    ERROR_NO_ARMATURE_SELECTED,
+    ERROR_NO_CHAIN_SELECTED,
+    ERROR_NOT_ARMATURE,
+    JIGGLE_CONFIG_KEY,
+    MODE_EDIT,
+    MODE_EDIT_ARMATURE,
+    MODE_OBJECT,
+    SUCCESS_ADDED_CHAIN,
+    SUCCESS_CHAIN_UPDATED,
+    SUCCESS_CONFIG_SAVED,
+    SUCCESS_CONFIG_UPDATED,
+    SUCCESS_REMOVED_CHAIN,
+    SUCCESS_ROTATION_CHAIN_CREATED,
+    SUCCESS_VALID_CHAIN,
+    UI_SPLIT_ARROW,
+    UI_SPLIT_END_BONE,
+    UI_SPLIT_START_BONE,
+    WARNING_BONES_NOT_IN_CHAIN,
+    WARNING_BRANCHES_DETECTED,
+    WARNING_CONFIG_NOT_SAVED,
+)
+from .properties import JiggleConfigProperty
 from .utils import get_bones_in_chain, validate_jiggle_chain
 
 
@@ -27,15 +59,15 @@ class JIGGLE_UL_chains(UIList):
                 )
                 status_icon = "CHECKMARK" if is_valid else "ERROR"
 
-            # Use split with precise proportions - start bone 30%, arrow 10%, end bone 55%, status 5%
-            split = row.split(factor=0.30, align=True)
+            # Use split with precise proportions
+            split = row.split(factor=UI_SPLIT_START_BONE, align=True)
             split.prop(item, "start_bone", text="", emboss=False, icon="BONE_DATA")
 
-            split = split.split(factor=0.1429, align=True)
+            split = split.split(factor=UI_SPLIT_ARROW, align=True)
             split.alignment = "CENTER"
             split.label(text="→")
 
-            split = split.split(factor=0.9167, align=True)
+            split = split.split(factor=UI_SPLIT_END_BONE, align=True)
             split.prop(item, "end_bone", text="", emboss=False, icon="BONE_DATA")
 
             split.alignment = "CENTER"
@@ -56,7 +88,7 @@ class JIGGLE_OT_add_chain(Operator):
     def execute(self, context):
         obj = context.active_object
         if not obj or obj.type != "ARMATURE":
-            self.report({"ERROR"}, "No armature selected")
+            self.report({"ERROR"}, ERROR_NO_ARMATURE_SELECTED)
             return {"CANCELLED"}
 
         config = obj.jiggle_config
@@ -64,8 +96,11 @@ class JIGGLE_OT_add_chain(Operator):
         config.active_chain_index = len(config.chains) - 1
 
         # Force update custom property
-        force_update_config(self, context)
-        self.report({"INFO"}, "Added new jiggle chain")
+        success = force_update_config(self, context)
+        if not success:
+            self.report({"WARNING"}, "Added chain, but failed to save config")
+        else:
+            self.report({"INFO"}, SUCCESS_ADDED_CHAIN)
 
         return {"FINISHED"}
 
@@ -80,7 +115,7 @@ class JIGGLE_OT_remove_chain(Operator):
     def execute(self, context):
         obj = context.active_object
         if not obj or obj.type != "ARMATURE":
-            self.report({"ERROR"}, "No armature selected")
+            self.report({"ERROR"}, ERROR_NO_ARMATURE_SELECTED)
             return {"CANCELLED"}
 
         config = obj.jiggle_config
@@ -89,8 +124,11 @@ class JIGGLE_OT_remove_chain(Operator):
             config.active_chain_index = max(0, config.active_chain_index - 1)
 
             # Force update custom property
-            force_update_config(self, context)
-            self.report({"INFO"}, "Removed jiggle chain")
+            success = force_update_config(self, context)
+            if not success:
+                self.report({"WARNING"}, "Removed chain, but failed to save config")
+            else:
+                self.report({"INFO"}, SUCCESS_REMOVED_CHAIN)
 
         return {"FINISHED"}
 
@@ -119,18 +157,18 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
     def execute(self, context):
         obj = context.active_object
         if not obj or obj.type != "ARMATURE":
-            self.report({"ERROR"}, "No armature selected")
+            self.report({"ERROR"}, ERROR_NO_ARMATURE_SELECTED)
             return {"CANCELLED"}
 
         config = obj.jiggle_config
         if config.active_chain_index < 0 or config.active_chain_index >= len(
             config.chains
         ):
-            self.report({"ERROR"}, "No chain selected")
+            self.report({"ERROR"}, ERROR_NO_CHAIN_SELECTED)
             return {"CANCELLED"}
 
-        if context.mode != "EDIT_ARMATURE":
-            self.report({"WARNING"}, "Select bones in Edit Mode")
+        if context.mode != MODE_EDIT_ARMATURE:
+            self.report({"WARNING"}, ERROR_NEED_EDIT_MODE)
             return {"CANCELLED"}
 
         selected_bones = [b.name for b in context.selected_bones]
@@ -139,18 +177,32 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
         selected_bones = self.filter_bones_by_side(selected_bones)
 
         if len(selected_bones) < 2:
-            self.report({"WARNING"}, "Select at least 2 bones")
+            self.report({"WARNING"}, ERROR_MIN_BONES_REQUIRED.format(count=2))
             return {"CANCELLED"}
 
         chain = config.chains[config.active_chain_index]
         chain.start_bone = selected_bones[0]
         chain.end_bone = selected_bones[-1]
 
+        # Validate the chain
+        is_valid, error_msg = validate_jiggle_chain(
+            obj, chain.start_bone, chain.end_bone
+        )
+        if not is_valid:
+            self.report({"ERROR"}, f"Invalid chain: {error_msg}")
+            # Reset invalid chain
+            chain.start_bone = ""
+            chain.end_bone = ""
+            return {"CANCELLED"}
+
         # Force update custom property
         force_update_config(self, context)
 
         self.report(
-            {"INFO"}, f"Set chain from '{selected_bones[0]}' to '{selected_bones[-1]}'"
+            {"INFO"},
+            SUCCESS_CHAIN_UPDATED.format(
+                start=selected_bones[0], end=selected_bones[-1]
+            ),
         )
 
         return {"FINISHED"}
@@ -162,52 +214,66 @@ class JIGGLE_OT_set_chain_from_selection(Operator):
         includes both left and right bones in the selection.
 
         When mirrored pairs are detected, keeps only the side matching the first bone.
+        Uses regex patterns to support common naming conventions like:
+        - bone_name.L / bone_name.R
+        - bone_name_L / bone_name_R
+        - bone_name_left / bone_name_right
         """
         if not bone_names or len(bone_names) < 2:
             return bone_names
 
-        # Extract the side suffix from the first bone
+        # Parse the first bone to determine target side
         first_bone = bone_names[0]
-        first_parts = first_bone.rsplit(".", 1)[0]
-        if "_" in first_parts:
-            target_side = first_parts.rsplit("_", 1)[-1]
-            has_side = True
-        else:
-            target_side = ""
-            has_side = False
+        first_base, first_side = self._parse_bone_side(first_bone)
 
         # If first bone has no side suffix, no filtering needed
-        if not has_side:
+        if not first_side:
             return bone_names
 
-        # Check if we have mirrored pairs (bones with same base name but different _L/_R)
+        # Check if we have mirrored pairs (bones with same base name but different sides)
         has_mirrored_pairs = False
         for bone_name in bone_names[1:]:
-            parts = bone_name.rsplit(".", 1)[0]
-            if "_" in parts:
-                side = parts.rsplit("_", 1)[-1]
-                if side and side != target_side:
-                    has_mirrored_pairs = True
-                    break
+            base, side = self._parse_bone_side(bone_name)
+            if base == first_base and side and side != first_side:
+                has_mirrored_pairs = True
+                break
 
         # If no mirrored pairs detected, return original list
         if not has_mirrored_pairs:
             return bone_names
 
-        # Filter to keep only bones matching the first bone's side
+        # Filter to keep only bones matching the target side or having no side
         filtered_bones = []
         for bone_name in bone_names:
-            parts = bone_name.rsplit(".", 1)[0]
-            if "_" in parts:
-                side = parts.rsplit("_", 1)[-1]
-                # Keep bones that match the target side OR have no side suffix
-                if side == target_side or side == "":
-                    filtered_bones.append(bone_name)
-            else:
-                # Bone has no side suffix - keep it
+            base, side = self._parse_bone_side(bone_name)
+            # Keep bones that match the target side OR have no side suffix OR different base name
+            if not side or side == first_side or base != first_base:
                 filtered_bones.append(bone_name)
 
         return filtered_bones if filtered_bones else bone_names
+
+    def _parse_bone_side(self, bone_name):
+        """
+        Parse a bone name to extract its base name and side suffix.
+
+        Args:
+            bone_name: Name of the bone (may include .001, .002, etc. suffixes)
+
+        Returns:
+            tuple: (base_name, side_suffix) where side_suffix is L/R/LEFT/RIGHT or empty string
+        """
+        # Remove Blender's duplicate suffix (.001, .002, etc.)
+        bone_name_without_dup = bone_name.rsplit(".", 1)[0]
+
+        # Try each pattern
+        for pattern in BONE_SUFFIX_PATTERNS:
+            match = re.match(pattern, bone_name_without_dup, re.IGNORECASE)
+            if match:
+                base, side = match.groups()
+                return base.lower(), side.upper()
+
+        # No pattern matched - return original name with no side
+        return bone_name_without_dup.lower(), ""
 
 
 class JIGGLE_OT_create_rotation_chain(Operator):
@@ -221,18 +287,18 @@ class JIGGLE_OT_create_rotation_chain(Operator):
     def execute(self, context):
         obj = context.active_object
         if not obj or obj.type != "ARMATURE":
-            self.report({"ERROR"}, "No armature selected")
+            self.report({"ERROR"}, ERROR_NO_ARMATURE_SELECTED)
             return {"CANCELLED"}
 
-        if context.mode != "EDIT_ARMATURE":
-            self.report({"WARNING"}, "Select bones in Edit Mode")
+        if context.mode != MODE_EDIT_ARMATURE:
+            self.report({"WARNING"}, ERROR_NEED_EDIT_MODE)
             return {"CANCELLED"}
 
         # Get selected bone names
         selected_bone_names = [b.name for b in context.selected_bones]
 
         if len(selected_bone_names) < 2:
-            self.report({"WARNING"}, "Select at least 2 bones")
+            self.report({"WARNING"}, ERROR_MIN_BONES_REQUIRED.format(count=2))
             return {"CANCELLED"}
 
         # Find the topmost bone (highest in hierarchy) among selected bones
@@ -240,10 +306,7 @@ class JIGGLE_OT_create_rotation_chain(Operator):
         top_bone = self.find_topmost_bone(armature, selected_bone_names)
 
         if not top_bone:
-            self.report(
-                {"ERROR"},
-                "Could not determine bone hierarchy - check parent relationships",
-            )
+            self.report({"ERROR"}, ERROR_HIERARCHY_INVALID)
             return {"CANCELLED"}
 
         # Build the chain from top to bottom
@@ -252,7 +315,7 @@ class JIGGLE_OT_create_rotation_chain(Operator):
         )
 
         if len(chain) < 2:
-            self.report({"ERROR"}, "Chain must have at least 2 bones")
+            self.report({"ERROR"}, ERROR_MIN_BONES_REQUIRED.format(count=2))
             return {"CANCELLED"}
 
         # Validate that all selected bones are in the chain
@@ -260,18 +323,20 @@ class JIGGLE_OT_create_rotation_chain(Operator):
         if missing_bones:
             self.report(
                 {"WARNING"},
-                f"Selected bones not in chain: {', '.join(sorted(missing_bones))}",
+                WARNING_BONES_NOT_IN_CHAIN.format(
+                    bones=", ".join(sorted(missing_bones))
+                ),
             )
 
         # Check if chain is linear
         if not is_linear:
             self.report(
                 {"WARNING"},
-                f"Multiple branches detected at '{branch_bone}' - rotation chain may not work as expected",
+                WARNING_BRANCHES_DETECTED.format(bone=branch_bone),
             )
 
         # Switch to object mode to add constraints
-        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.ops.object.mode_set(mode=MODE_OBJECT)
 
         # Add Copy Rotation constraints to each bone (except the first)
         for i in range(1, len(chain)):
@@ -287,29 +352,29 @@ class JIGGLE_OT_create_rotation_chain(Operator):
             # Check if constraint already exists
             existing_constraint = None
             for constraint in pose_bone.constraints:
-                if constraint.type == "COPY_ROTATION" and constraint.target == obj:
+                if constraint.type == CONSTRAINT_TYPE and constraint.target == obj:
                     existing_constraint = constraint
                     break
 
             if existing_constraint:
                 # Update existing constraint
                 existing_constraint.subtarget = prev_bone_name
-                existing_constraint.owner_space = "LOCAL"
-                existing_constraint.target_space = "LOCAL"
-                existing_constraint.influence = 1.0
+                existing_constraint.owner_space = CONSTRAINT_OWNER_SPACE
+                existing_constraint.target_space = CONSTRAINT_TARGET_SPACE
+                existing_constraint.influence = CONSTRAINT_INFLUENCE
             else:
                 # Create the Copy Rotation constraint
-                constraint = pose_bone.constraints.new(type="COPY_ROTATION")
+                constraint = pose_bone.constraints.new(type=CONSTRAINT_TYPE)
                 constraint.target = obj
                 constraint.subtarget = prev_bone_name
-                constraint.owner_space = "LOCAL"
-                constraint.target_space = "LOCAL"
-                constraint.influence = 1.0
+                constraint.owner_space = CONSTRAINT_OWNER_SPACE
+                constraint.target_space = CONSTRAINT_TARGET_SPACE
+                constraint.influence = CONSTRAINT_INFLUENCE
 
         # Switch back to edit mode
-        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.object.mode_set(mode=MODE_EDIT)
 
-        self.report({"INFO"}, f"Created rotation chain with {len(chain)} bones")
+        self.report({"INFO"}, SUCCESS_ROTATION_CHAIN_CREATED.format(count=len(chain)))
         return {"FINISHED"}
 
     def find_topmost_bone(self, armature, selected_bones):
@@ -470,12 +535,12 @@ class JIGGLE_PT_jiggle_bones(Panel):
 
             # Quick select from selection
             row = chain_box.row()
-            if context.mode == "EDIT_ARMATURE":
+            if context.mode == MODE_EDIT_ARMATURE:
                 row.operator(
                     "jiggle.set_chain_from_selection", icon="RESTRICT_SELECT_OFF"
                 )
             else:
-                row.label(text="Enter Edit Mode to select bones", icon="INFO")
+                row.label(text=ERROR_NEED_EDIT_MODE, icon="INFO")
 
             # Validation info
             if active_chain.start_bone and active_chain.end_bone:
@@ -490,7 +555,8 @@ class JIGGLE_PT_jiggle_bones(Panel):
                         obj, active_chain.start_bone, active_chain.end_bone
                     )
                     info_row.label(
-                        text=f"✓ Valid chain ({len(bones)} bones)", icon="CHECKMARK"
+                        text=SUCCESS_VALID_CHAIN.format(count=len(bones)),
+                        icon="CHECKMARK",
                     )
                 else:
                     info_row.label(text=f"✗ {error_msg}", icon="ERROR")
@@ -523,10 +589,10 @@ class JIGGLE_PT_jiggle_bones(Panel):
 
         # Status indicator
         status_box = layout.box()
-        if "jiggle_bones_config" in obj:
-            status_box.label(text="✓ Config saved to armature", icon="CHECKMARK")
+        if JIGGLE_CONFIG_KEY in obj:
+            status_box.label(text=SUCCESS_CONFIG_SAVED, icon="CHECKMARK")
         else:
-            status_box.label(text="No config saved yet", icon="ERROR")
+            status_box.label(text=WARNING_CONFIG_NOT_SAVED, icon="ERROR")
 
         # Force update button
         status_box.operator("jiggle.force_update", icon="FILE_REFRESH")
@@ -565,16 +631,17 @@ class JIGGLE_PT_utilities(Panel):
 
         # Create rotation chain button
         row = box.row()
-        if context.mode == "EDIT_ARMATURE":
+        if context.mode == MODE_EDIT_ARMATURE:
             row.operator("jiggle.create_rotation_chain", icon="CONSTRAINT")
         else:
-            row.label(text="Enter Edit Mode to create rotation chains", icon="INFO")
+            row.label(text=ERROR_NEED_EDIT_MODE, icon="INFO")
 
         # Instructions
-        if context.mode == "EDIT_ARMATURE":
+        if context.mode == MODE_EDIT_ARMATURE:
             info_row = box.row()
             info_row.label(
-                text="Select 2+ bones in hierarchy, then click above", icon="INFO"
+                text=f"{ERROR_MIN_BONES_REQUIRED.format(count=2)}, then click above",
+                icon="INFO",
             )
 
 
@@ -584,14 +651,18 @@ def force_update_config(op, context):
     if obj and obj.type == "ARMATURE" and hasattr(obj, "jiggle_config"):
         try:
             json_string = obj.jiggle_config.to_json()
-            obj["jiggle_bones_config"] = json_string
+            obj[JIGGLE_CONFIG_KEY] = json_string
             op.report(
-                {"INFO"}, f"Config updated: {len(obj.jiggle_config.chains)} chain(s)"
+                {"INFO"},
+                SUCCESS_CONFIG_UPDATED.format(count=len(obj.jiggle_config.chains)),
             )
+            return True
         except Exception as e:
             op.report({"ERROR"}, f"Failed to update config: {str(e)}")
+            return False
     else:
-        op.report({"ERROR"}, "No armature with jiggle config found")
+        op.report({"ERROR"}, ERROR_NOT_ARMATURE)
+        return False
 
 
 def register():

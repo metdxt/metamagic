@@ -3,7 +3,20 @@ from typing import Any, Dict, List, Optional
 
 import bpy
 
-from .properties import JiggleChainProperty, JiggleConfigProperty
+from .constants import (
+    DEFAULT_DRAG,
+    DEFAULT_GRAVITY,
+    DEFAULT_RADIUS,
+    DEFAULT_STIFFNESS,
+    ERROR_END_BONE_EMPTY,
+    ERROR_END_BONE_NOT_FOUND,
+    ERROR_INVALID_CHAIN,
+    ERROR_NOT_ARMATURE,
+    ERROR_START_BONE_EMPTY,
+    ERROR_START_BONE_NOT_FOUND,
+    JIGGLE_CONFIG_KEY,
+)
+from .properties import JiggleConfigProperty
 
 
 def get_jiggle_config(obj: bpy.types.Object) -> Optional[JiggleConfigProperty]:
@@ -40,9 +53,10 @@ def save_jiggle_config_to_custom_properties(obj: bpy.types.Object) -> bool:
 
     try:
         json_string = config.to_json()
-        obj["jiggle_bones_config"] = json_string
+        obj[JIGGLE_CONFIG_KEY] = json_string
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[Metamagic] Error saving jiggle config to custom properties: {e}")
         return False
 
 
@@ -63,11 +77,17 @@ def load_jiggle_config_from_custom_properties(obj: bpy.types.Object) -> bool:
     if not config:
         return False
 
-    if "jiggle_bones_config" in obj:
+    if JIGGLE_CONFIG_KEY in obj:
         try:
-            config.from_json(obj["jiggle_bones_config"])
+            config.from_json(obj[JIGGLE_CONFIG_KEY])
             return True
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print(f"[Metamagic] JSON decode error loading jiggle config: {e}")
+            return False
+        except Exception as e:
+            print(
+                f"[Metamagic] Error loading jiggle config from custom properties: {e}"
+            )
             return False
 
     return False
@@ -99,7 +119,6 @@ def get_bones_in_chain(
         return []
 
     # Get bone objects
-    start_bone_obj = armature.bones[start_bone]
     end_bone_obj = armature.bones[end_bone]
 
     # If bones are the same, return single bone
@@ -108,9 +127,16 @@ def get_bones_in_chain(
 
     # Walk from end bone up to start bone
     chain = []
+    visited = set()  # Track visited bones to detect cycles
     current_bone = end_bone_obj
 
     while current_bone:
+        # Check for circular reference
+        if current_bone.name in visited:
+            # Circular reference detected, return empty list
+            return []
+        visited.add(current_bone.name)
+
         chain.append(current_bone.name)
 
         if current_bone.name == start_bone:
@@ -139,23 +165,23 @@ def validate_jiggle_chain(
         Tuple of (is_valid, error_message)
     """
     if not obj or obj.type != "ARMATURE":
-        return False, "Object is not an armature"
+        return False, ERROR_NOT_ARMATURE
 
     if not start_bone:
-        return False, "Start bone name is empty"
+        return False, ERROR_START_BONE_EMPTY
 
     if not end_bone:
-        return False, "End bone name is empty"
+        return False, ERROR_END_BONE_EMPTY
 
     if start_bone not in obj.data.bones:
-        return False, f"Start bone '{start_bone}' not found in armature"
+        return False, ERROR_START_BONE_NOT_FOUND.format(bone=start_bone)
 
     if end_bone not in obj.data.bones:
-        return False, f"End bone '{end_bone}' not found in armature"
+        return False, ERROR_END_BONE_NOT_FOUND.format(bone=end_bone)
 
     chain = get_bones_in_chain(obj, start_bone, end_bone)
     if not chain:
-        return False, f"Cannot find chain from '{start_bone}' to '{end_bone}'"
+        return False, ERROR_INVALID_CHAIN.format(start=start_bone, end=end_bone)
 
     return True, ""
 
@@ -190,24 +216,51 @@ def import_jiggle_config_from_dict(
     Returns:
         True if successful, False otherwise
     """
+    # Validate input structure
+    if not isinstance(config_dict, dict):
+        print("[Metamagic] Error: config_dict must be a dictionary")
+        return False
+
     config = get_jiggle_config(obj)
     if not config:
+        print("[Metamagic] Error: No jiggle config found on object")
         return False
 
     try:
-        chains_data = config_dict.get("chains", [])
+        # Validate and extract chains data
+        if "chains" not in config_dict:
+            print("[Metamagic] Error: config_dict missing 'chains' key")
+            return False
+
+        chains_data = config_dict["chains"]
+        if not isinstance(chains_data, list):
+            print("[Metamagic] Error: 'chains' must be a list")
+            return False
+
+        # Validate each chain entry before clearing existing chains
+        for i, chain_data in enumerate(chains_data):
+            if not isinstance(chain_data, dict):
+                print(f"[Metamagic] Error: Chain at index {i} is not a dictionary")
+                return False
+
+        # Only clear chains after validation passes
         config.chains.clear()
-        for chain_data in chains_data:
+
+        for i, chain_data in enumerate(chains_data):
             chain = config.chains.add()
             chain.start_bone = chain_data.get("start_bone", "")
             chain.end_bone = chain_data.get("end_bone", "")
-            chain.stiffness = chain_data.get("stiffness", 1.0)
-            chain.drag = chain_data.get("drag", 0.4)
-            chain.gravity = chain_data.get("gravity", 0.0)
-            chain.radius = chain_data.get("radius", 0.02)
+            chain.stiffness = chain_data.get("stiffness", DEFAULT_STIFFNESS)
+            chain.drag = chain_data.get("drag", DEFAULT_DRAG)
+            chain.gravity = chain_data.get("gravity", DEFAULT_GRAVITY)
+            chain.radius = chain_data.get("radius", DEFAULT_RADIUS)
             chain.extend_end_bone = chain_data.get("extend_end_bone", False)
 
-        save_jiggle_config_to_custom_properties(obj)
+        if not save_jiggle_config_to_custom_properties(obj):
+            print("[Metamagic] Warning: Failed to save config to custom properties")
+            return False
+
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[Metamagic] Error importing jiggle config from dict: {e}")
         return False
