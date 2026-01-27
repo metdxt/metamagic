@@ -5,11 +5,13 @@ from bpy.props import (
     BoolProperty,
     CollectionProperty,
     FloatProperty,
+    PointerProperty,
     StringProperty,
 )
 from bpy.types import PropertyGroup
 
 from .constants import (
+    BONE_ATTACHMENT_CONFIG_KEY,
     DEFAULT_DRAG,
     DEFAULT_GRAVITY,
     DEFAULT_RADIUS,
@@ -49,6 +51,25 @@ def update_chain_property(self, context):
             obj[JIGGLE_CONFIG_KEY] = json_string
         except Exception as e:
             print(f"[Metamagic] Error updating chain property: {e}")
+
+
+def update_bone_attachment_property(self, context):
+    """Callback to update custom property when bone attachment data changes."""
+    # Using id_data to get the object this property group is attached to
+    obj = self.id_data
+    if obj and hasattr(obj, "bone_attachment_config"):
+        try:
+            data = {
+                "armature": self.armature.name if self.armature else "",
+                "bone": self.bone,
+            }
+            # Only save if we have at least an armature or bone
+            if data["armature"] or data["bone"]:
+                obj[BONE_ATTACHMENT_CONFIG_KEY] = json.dumps(data)
+            elif BONE_ATTACHMENT_CONFIG_KEY in obj:
+                del obj[BONE_ATTACHMENT_CONFIG_KEY]
+        except Exception as e:
+            print(f"[Metamagic] Error updating bone attachment property: {e}")
 
 
 class JiggleChainProperty(PropertyGroup):
@@ -176,3 +197,24 @@ class JiggleConfigProperty(PropertyGroup):
             return True
         except (json.JSONDecodeError, TypeError, AttributeError):
             return False
+
+
+class BoneAttachmentProperty(PropertyGroup):
+    """Configuration for attaching an object to a bone in Godot"""
+
+    bl_idname = "bone_attachment_config"
+
+    armature: PointerProperty(
+        name="Armature",
+        description="Armature containing the bone",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == "ARMATURE",
+        update=update_bone_attachment_property,
+    )
+
+    bone: StringProperty(
+        name="Bone",
+        description="Bone to attach to",
+        default="",
+        update=update_bone_attachment_property,
+    )

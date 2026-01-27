@@ -46,6 +46,8 @@ __all__ = [
 
 # Custom property key for storing jiggle configuration in armatures
 JIGGLE_CONFIG_KEY = "jiggle_bones_config"
+# Custom property key for storing bone attachment configuration in objects
+BONE_ATTACHMENT_CONFIG_KEY = "metamagic_bone_attachment"
 
 # UI List split factors for chain display
 # These define the proportional widths of different sections in the chain list

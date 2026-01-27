@@ -33,7 +33,7 @@ from .constants import (
     WARNING_BRANCHES_DETECTED,
     WARNING_CONFIG_NOT_SAVED,
 )
-from .properties import JiggleConfigProperty
+from .properties import BoneAttachmentProperty, JiggleConfigProperty
 from .utils import get_bones_in_chain, validate_jiggle_chain
 
 
@@ -471,6 +471,35 @@ class JIGGLE_OT_create_rotation_chain(Operator):
         return chain
 
 
+class METAMAGIC_PT_bone_attachment(Panel):
+    """Panel for configuring bone attachment in Godot"""
+
+    bl_label = "Bone Attachment"
+    bl_idname = "METAMAGIC_PT_bone_attachment"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Metamagic"
+    bl_order = 0
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+        config = obj.bone_attachment_config
+
+        layout.prop(config, "armature")
+
+        if config.armature and config.armature.type == "ARMATURE":
+            layout.prop_search(
+                config, "bone", config.armature.data, "bones", text="Bone"
+            )
+        else:
+            layout.prop(config, "bone")
+
+
 class JIGGLE_PT_jiggle_bones(Panel):
     """Panel for configuring jiggle bone physics"""
 
@@ -669,7 +698,11 @@ def register():
     bpy.types.Object.jiggle_config = bpy.props.PointerProperty(
         type=JiggleConfigProperty
     )
+    bpy.types.Object.bone_attachment_config = bpy.props.PointerProperty(
+        type=BoneAttachmentProperty
+    )
 
 
 def unregister():
     del bpy.types.Object.jiggle_config
+    del bpy.types.Object.bone_attachment_config
