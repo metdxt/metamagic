@@ -33,20 +33,42 @@ func _process_node(scene: Node, node: Node3D) -> void:
 	# Find the skeleton in the scene
 	var skeleton: Skeleton3D = _find_skeleton(scene, armature_name)
 
-	if skeleton:
-		if skeleton.find_bone(bone_name) == -1:
-			printerr("[Metamagic] Bone '", bone_name, "' not found in skeleton '", skeleton.name, "' for node '", node.name, "'")
-			return
+	if not skeleton:
+		push_error("[Metamagic] Could not find skeleton named: '%s'! BoneAttachment import plugin will have no effect." % [armature_name])
+		return
 
-		var ba = BoneAttachment3D.new()
-		ba.name = "BA_" + bone_name + "_" + node.name
-		ba.bone_name = bone_name
+	var skeleton_parent = skeleton.get_parent() as Node3D
+	if not skeleton_parent:
+		push_error("[Metamagic] Skeleton3D does not have valid parent!BoneAttachment import plugin will have no effect.")
+		return
 
-		skeleton.add_child(ba)
-		ba.owner = scene
 
-		# Reparent the node to the BoneAttachment3D
-		node.reparent(ba)
+	var bone_idx = skeleton.find_bone(bone_name)
+	if bone_idx == -1:
+		push_error("[Metamagic] Bone '%s' not found in skeleton '%s' for node '%s'" % [bone_name, armature_name, node.name])
+		return
+
+	# Calculate relative position of the node to the rest pose of the bone
+	# we're attaching to. This is needed to put it in the right place, where
+	# its seen in Blender. We can't use BoneAttachment3D transform because
+	# it gives us scuffed and useless zero transform.
+	var rest_transform = skeleton.get_bone_global_pose(bone_idx)
+	var delta_position = node.position - (rest_transform.origin + skeleton_parent.position)
+
+	# Create BoneAttachment3D
+	var ba = BoneAttachment3D.new()
+	ba.name = "BA_" + bone_name + "_" + node.name
+	ba.bone_name = bone_name
+
+	skeleton.add_child(ba)
+	ba.owner = scene
+
+	# Reparent the node to the BoneAttachment3D, resetting the owner so that the warning shuts up
+	node.owner = null
+	node.reparent(ba)
+	node.owner = scene
+	node.position = delta_position
+
 
 func _find_skeleton(scene: Node, armature_name: String) -> Skeleton3D:
 	var skeletons = scene.find_children("*", "Skeleton3D", true)
