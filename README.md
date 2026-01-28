@@ -32,8 +32,9 @@ Ever wanted to attach a sword, helmet, or any prop to a specific bone in your ch
 1. **Select your object** in Blender (the mesh, empty, or whatever you want to attach)
 2. **Open the Metamagic panel** (N-panel in the 3D viewport)
 3. **Pick the armature** and **bone** you want to attach to
-4. **Export** to Godot
-5. **Boom!** The object is now parented to a `BoneAttachment3D` node in Godot, following the bone animation perfectly
+4. **Click "Snap to Bone"** (optional) if you want to perfectly align your object to the bone's pivot in Blender.
+5. **Export** to Godot
+6. **Boom!** The object is now parented to a `BoneAttachment3D` node in Godot, following the bone animation perfectly while keeping its relative offset!
 
 This is perfect for things like:
 - Weapons attached to hands
@@ -130,10 +131,12 @@ Making some bouncy... hair?
 
 ## Tips & Tricks
 
-- **Metadata sticks:** The configuration is saved in your Blender file, so you can always come back and tweak it
-- **Non-destructive:** Metamagic doesn't modify your actual mesh or armature, it just adds metadata
-- **Multiple chains:** You can have as many jiggle chains or bone attachments as you need
-- **Export anywhere:** Whether you save as `.blend` or export to GLTF, Metamagic's metadata comes along for the ride
+- **Metadata sticks:** The configuration is saved in your Blender file, so you can always come back and tweak it.
+- **Perfect Transforms:** Metamagic preserves the relative offset between your object and the bone. No more visual "jumps" on import!
+- **Snap to Bone:** Use the "Snap to Bone" button in Blender to instantly align your prop's origin and rotation with the target bone.
+- **Non-destructive:** Metamagic doesn't modify your actual mesh or armature, it just adds metadata.
+- **Multiple chains:** You can have as many jiggle chains or bone attachments as you need.
+- **Export anywhere:** Whether you save as `.blend` or export to GLTF, Metamagic's metadata comes along for the ride.
 
 ---
 
