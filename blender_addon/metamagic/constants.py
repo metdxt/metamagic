@@ -42,12 +42,27 @@ __all__ = [
     "MODE_EDIT_ARMATURE",
     "MODE_EDIT",
     "MODE_OBJECT",
+    # Variant constants
+    "VARIANT_CONFIG_KEY",
+    "ERROR_VARIANT_NO_GROUP",
+    "ERROR_VARIANT_NO_MEMBERS",
+    "ERROR_VARIANT_OBJECT_ALREADY_IN_GROUP",
+    "ERROR_VARIANT_INVALID_INDEX",
+    "SUCCESS_VARIANT_GROUP_ADDED",
+    "SUCCESS_VARIANT_GROUP_REMOVED",
+    "SUCCESS_VARIANT_MEMBER_ADDED",
+    "SUCCESS_VARIANT_MEMBER_REMOVED",
+    "SUCCESS_VARIANT_DEFAULT_SET",
+    "SUCCESS_VARIANT_METADATA_SYNCED",
+    "WARNING_VARIANT_EMPTY_SLOT",
 ]
 
 # Custom property key for storing jiggle configuration in armatures
 JIGGLE_CONFIG_KEY = "jiggle_bones_config"
 # Custom property key for storing bone attachment configuration in objects
 BONE_ATTACHMENT_CONFIG_KEY = "metamagic_bone_attachment"
+# Custom property key for storing variant metadata per-object (survives glTF export)
+VARIANT_CONFIG_KEY = "metamagic_variant"
 
 # UI List split factors for chain display
 # These define the proportional widths of different sections in the chain list
@@ -118,3 +133,26 @@ MODE_EDIT_ARMATURE = "EDIT_ARMATURE"
 # bpy.ops.object.mode_set() expects "EDIT" not "EDIT_ARMATURE"
 MODE_EDIT = "EDIT"
 MODE_OBJECT = "OBJECT"
+
+# ---------------------------------------------------------------------------
+#   Variant messages
+# ---------------------------------------------------------------------------
+
+# Error messages – variants
+ERROR_VARIANT_NO_GROUP = "No variant group selected"
+ERROR_VARIANT_NO_MEMBERS = "Variant group has no members"
+ERROR_VARIANT_OBJECT_ALREADY_IN_GROUP = (
+    "Object '{name}' already belongs to group '{group}'"
+)
+ERROR_VARIANT_INVALID_INDEX = "Invalid variant index"
+
+# Success messages – variants
+SUCCESS_VARIANT_GROUP_ADDED = "Added variant group '{name}'"
+SUCCESS_VARIANT_GROUP_REMOVED = "Removed variant group"
+SUCCESS_VARIANT_MEMBER_ADDED = "Added {count} object(s) to '{group}'"
+SUCCESS_VARIANT_MEMBER_REMOVED = "Removed member from '{group}'"
+SUCCESS_VARIANT_DEFAULT_SET = "Default variant set to '{name}'"
+SUCCESS_VARIANT_METADATA_SYNCED = "Variant metadata synced ({count} group(s))"
+
+# Warning messages – variants
+WARNING_VARIANT_EMPTY_SLOT = "Variant member slot has no object assigned"

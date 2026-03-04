@@ -3,6 +3,7 @@ extends EditorPlugin
 
 var jiggle_plugin := preload("res://addons/metamagic/jiggle_post_process.gd").new()
 var bone_attachment_plugin := preload("res://addons/metamagic/bone_attachment_post_process.gd").new()
+var variant_plugin := preload("res://addons/metamagic/variant_post_process.gd").new()
 
 func _enable_plugin() -> void:
 	# Add autoloads here.
@@ -18,9 +19,11 @@ func _enter_tree() -> void:
 	# Initialization of the plugin goes here.
 	add_scene_post_import_plugin(jiggle_plugin, false)
 	add_scene_post_import_plugin(bone_attachment_plugin, false)
+	add_scene_post_import_plugin(variant_plugin, false)
 
 
 func _exit_tree() -> void:
 	# Clean-up of the plugin goes here.
 	remove_scene_post_import_plugin(jiggle_plugin)
 	remove_scene_post_import_plugin(bone_attachment_plugin)
+	remove_scene_post_import_plugin(variant_plugin)
