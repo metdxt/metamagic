@@ -52,6 +52,30 @@ Make your character's hair, tails, clothes, or floppy ears bounce naturally with
 
 ![Jiggle Physics Demo](./demo_screenshots/demo_jiggle.png)
 
+### 🎛️ Object Variants
+
+Store multiple versions of an object in a single `.blend` file and switch between them in the Godot editor with a dropdown—no duplicate scenes, no manual show/hide juggling:
+
+1. **Group your variants in Blender:** Open the **Metamagic** panel, create a Variant Group, select your objects (e.g. `mod_2m_window_gf`, `mod_0.5m_corner_out_gf`, `mod_2m_solid_gf`) and click **Add Selected Objects**
+2. **Pick a default:** Click the ★ star icon next to the variant that should be visible by default
+3. **Export:** Save as `.blend` or export to glTF
+4. **Switch in Godot:** The imported scene gets a **Variants** section in the Inspector with a dropdown for each group—pick any variant and it swaps instantly
+
+![Object Variants Demo](./demo_screenshots/variants.png)
+
+**How it works:**
+- Each member object gets a `metamagic_variant` custom property (JSON) that survives the glTF round-trip as extras
+- On import, Godot's post-import plugin reads the metadata, hides non-default variants, and attaches a `@tool` script to the scene root
+- The tool script uses `_get_property_list()` to dynamically expose enum dropdowns in the Inspector
+- Your choice persists across scene save/load via `@export_storage`
+
+**Smart features:**
+- Preview any variant in Blender's viewport without changing the default
+- Viewport preview uses temporary hide (`hide_set`) so transforms and modifiers are always fully evaluated—no broken exports
+- Preview state restores automatically when reopening the `.blend` file
+- An object can only belong to one variant group (the addon warns you if you try to double-assign)
+- Removing a group or member automatically un-hides everything so nothing gets stuck invisible
+
 ### 🔄 Rotation Chain Utilities
 
 Create bone rotation constraints with a single click—great for additive animations or procedural stuff:
@@ -117,6 +141,17 @@ Want to attach a sword to your character's hand?
 4. Export to Godot
 5. Your sword is now properly parented and follows hand animation!
 
+### Setting Up Object Variants
+
+Want to ship one building module with multiple wall styles?
+
+1. Set up your variants as separate objects in Blender (e.g. empties parenting different meshes)
+2. In the Metamagic panel, go to **Object Variants** and click **+** to create a group
+3. Give it a name like "WallStyle"
+4. Select all the variant objects in the viewport, then click **Add Selected Objects**
+5. Click the ★ next to the one you want as the default
+6. Export to Godot—pick your wall style from the **Variants** dropdown in the Inspector!
+
 ### Configuring Jiggle Physics
 
 Making some bouncy... hair?
@@ -135,7 +170,8 @@ Making some bouncy... hair?
 - **Perfect Transforms:** Metamagic preserves the relative offset between your object and the bone. No more visual "jumps" on import!
 - **Snap to Bone:** Use the "Snap to Bone" button in Blender to instantly align your prop's origin and rotation with the target bone.
 - **Non-destructive:** Metamagic doesn't modify your actual mesh or armature, it just adds metadata.
-- **Multiple chains:** You can have as many jiggle chains or bone attachments as you need.
+- **Variant preview:** Use the Preview buttons in the Variants panel to quickly cycle through variants in Blender without changing which one is the default.
+- **Multiple chains:** You can have as many jiggle chains, bone attachments, or variant groups as you need.
 - **Export anywhere:** Whether you save as `.blend` or export to GLTF, Metamagic's metadata comes along for the ride.
 
 ---
