@@ -4,6 +4,7 @@ extends EditorPlugin
 var jiggle_plugin := preload("res://addons/metamagic/jiggle_post_process.gd").new()
 var bone_attachment_plugin := preload("res://addons/metamagic/bone_attachment_post_process.gd").new()
 var variant_plugin := preload("res://addons/metamagic/variant_post_process.gd").new()
+var collision_plugin := preload("res://addons/metamagic/collision_post_process.gd").new()
 
 const VariantMuseum = preload("res://addons/metamagic/variant_museum.gd")
 
@@ -25,6 +26,7 @@ func _enter_tree() -> void:
 	add_scene_post_import_plugin(jiggle_plugin, false)
 	add_scene_post_import_plugin(bone_attachment_plugin, false)
 	add_scene_post_import_plugin(variant_plugin, false)
+	add_scene_post_import_plugin(collision_plugin, false)
 
 	add_tool_menu_item(MUSEUM_MENU_LABEL, _on_generate_variant_museum)
 
@@ -34,6 +36,7 @@ func _exit_tree() -> void:
 	remove_scene_post_import_plugin(jiggle_plugin)
 	remove_scene_post_import_plugin(bone_attachment_plugin)
 	remove_scene_post_import_plugin(variant_plugin)
+	remove_scene_post_import_plugin(collision_plugin)
 
 	remove_tool_menu_item(MUSEUM_MENU_LABEL)
 

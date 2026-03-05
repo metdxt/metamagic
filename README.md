@@ -90,6 +90,41 @@ Need to see all your variants at a glance? Turn any inherited scene into a **mus
 
 The tool modifies the current scene in-place — no duplicate files. It computes mesh bounding boxes to space variants properly, adds white `Label3D` captions per variant and gold group headers above each row. Multiple variant groups get laid out as separate rows. Running the tool again cleans up previous labels first, so it's safe to re-run. Great for QA, art reviews, or just admiring your work!
 
+### 💥 Collision Shapes
+
+Turn Blender **Empties** into fully configured physics bodies with collision shapes in Godot—no manual setup required. This brings the classic Collada `-colonly` workflow to straight `.blend` file imports:
+
+1. **Add Empties** in Blender where you want collision shapes (use them to outline walls, floors, triggers, etc.)
+2. **Open the Metamagic panel** (N-panel), go to the **Collision Shape** section
+3. **Enable collision** on the Empty and pick your settings—shape type, body type, layer/mask
+4. **Save** your `.blend` file
+5. **In Godot:** The Empty is automatically replaced with a physics body (`StaticBody3D`, `Area3D`, etc.) and a correctly sized `CollisionShape3D` child
+
+**Auto mode** derives the collision shape from the Empty's draw type, matching the classic Collada convention:
+
+| Empty Draw Type | Godot Shape |
+|---|---|
+| Single Arrow | `SeparationRayShape3D` |
+| Cube | `BoxShape3D` |
+| Image | `WorldBoundaryShape3D` |
+| Sphere (and others) | `SphereShape3D` |
+
+Or override manually and pick any shape: Box, Sphere, Capsule, Cylinder, Separation Ray, or World Boundary.
+
+**Body types:** Choose between `StaticBody3D`, `AnimatableBody3D`, `RigidBody3D`, `CharacterBody3D`, or `Area3D` depending on your needs.
+
+**How it works:**
+- The Blender addon writes a `metamagic_collision` JSON custom property on each tagged Empty containing the shape type, body type, display size, and optional physics parameters
+- On import, Godot's post-import plugin reads the metadata, creates the physics body and collision shape, and replaces the original Empty node in-place
+- The Empty's scale is baked into the shape dimensions so the body keeps a clean uniform scale (no Godot warnings!)
+- Children of the Empty (meshes, other nodes) are automatically reparented onto the new body node
+
+**Smart features:**
+- **Batch apply:** Configure one Empty, select others, and click "Apply to Selected Empties" to copy settings to all of them
+- **Size from Empty:** The collision shape dimensions are derived from the Empty's `display_size` and scale—resize the Empty in Blender, the collision shape follows
+- **Non-uniform scale handling:** Scale is automatically extracted from the transform and baked into the shape, so physics bodies always have uniform scale
+- **Clean names:** The body and collision shape keep the original Empty's name (e.g. `my_collider` → `my_collider` + `my_collider_col`)
+
 ### 🔄 Rotation Chain Utilities
 
 Create bone rotation constraints with a single click—great for additive animations or procedural stuff:
@@ -175,6 +210,18 @@ Want to see every variant side by side for review?
 2. Go to **Project > Tools > Metamagic: Generate Variant Museum**
 3. Done! The scene is rearranged with all variants visible, spaced out, and labelled — re-run any time to refresh
 
+### Setting Up Collision Shapes
+
+Want to add collision to your level geometry without touching Godot?
+
+1. In Blender, add an Empty where you want collision (e.g. a Cube Empty around a wall segment)
+2. Scale and position the Empty to match the collision area
+3. In the Metamagic panel, enable **Collision Shape**
+4. Leave shape on **Auto** (it picks Box for Cube empties, Sphere for Sphere empties, etc.) or choose manually
+5. Pick a body type—**Static Body** for walls/floors, **Area** for triggers
+6. Save the `.blend` and reimport in Godot
+7. Your Empty is now a `StaticBody3D` with a perfectly sized `CollisionShape3D`!
+
 ### Configuring Jiggle Physics
 
 Making some bouncy... hair?
@@ -195,7 +242,9 @@ Making some bouncy... hair?
 - **Non-destructive:** Metamagic doesn't modify your actual mesh or armature, it just adds metadata.
 - **Variant preview:** Use the Preview buttons in the Variants panel to quickly cycle through variants in Blender without changing which one is the default.
 - **Variant museum:** Convert any variant scene into a museum layout in Godot (**Project > Tools**)—safe to re-run, perfect for art reviews or QA passes.
-- **Multiple chains:** You can have as many jiggle chains, bone attachments, or variant groups as you need.
+- **Collision from Empties:** Use Blender's Empty display type to control which collision shape Godot creates—Cube for boxes, Sphere for spheres, or override manually.
+- **Batch collision setup:** Tag one Empty with collision settings, then batch-apply to dozens of selected Empties in one click.
+- **Multiple chains:** You can have as many jiggle chains, bone attachments, collision shapes, or variant groups as you need.
 - **Export anywhere:** Whether you save as `.blend` or export to GLTF, Metamagic's metadata comes along for the ride.
 
 ---

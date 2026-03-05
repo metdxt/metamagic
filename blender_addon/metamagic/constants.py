@@ -42,6 +42,20 @@ __all__ = [
     "MODE_EDIT_ARMATURE",
     "MODE_EDIT",
     "MODE_OBJECT",
+    # Collision constants
+    "COLLISION_CONFIG_KEY",
+    "COLLISION_SHAPE_AUTO",
+    "COLLISION_SHAPE_BOX",
+    "COLLISION_SHAPE_SPHERE",
+    "COLLISION_SHAPE_RAY",
+    "COLLISION_SHAPE_WORLD_BOUNDARY",
+    "COLLISION_SHAPE_CAPSULE",
+    "COLLISION_SHAPE_CYLINDER",
+    "EMPTY_DRAW_TYPE_TO_SHAPE",
+    "COLLISION_SHAPE_ITEMS",
+    "ERROR_COLLISION_NOT_EMPTY",
+    "SUCCESS_COLLISION_APPLIED",
+    "SUCCESS_COLLISION_REMOVED",
     # Variant constants
     "VARIANT_CONFIG_KEY",
     "ERROR_VARIANT_NO_GROUP",
@@ -61,8 +75,68 @@ __all__ = [
 JIGGLE_CONFIG_KEY = "jiggle_bones_config"
 # Custom property key for storing bone attachment configuration in objects
 BONE_ATTACHMENT_CONFIG_KEY = "metamagic_bone_attachment"
+# Custom property key for storing collision shape configuration on empties
+COLLISION_CONFIG_KEY = "metamagic_collision"
 # Custom property key for storing variant metadata per-object (survives glTF export)
 VARIANT_CONFIG_KEY = "metamagic_variant"
+
+# ---------------------------------------------------------------------------
+#   Collision shape constants
+# ---------------------------------------------------------------------------
+
+# Shape type identifiers (stored in JSON metadata, read by Godot post-import)
+COLLISION_SHAPE_AUTO = "AUTO"
+COLLISION_SHAPE_BOX = "BoxShape3D"
+COLLISION_SHAPE_SPHERE = "SphereShape3D"
+COLLISION_SHAPE_RAY = "SeparationRayShape3D"
+COLLISION_SHAPE_WORLD_BOUNDARY = "WorldBoundaryShape3D"
+COLLISION_SHAPE_CAPSULE = "CapsuleShape3D"
+COLLISION_SHAPE_CYLINDER = "CylinderShape3D"
+
+# Mapping from Blender Empty display_type to Godot collision shape.
+# Used when shape is set to AUTO to derive the shape from the draw type.
+#   Single Arrow  → SeparationRayShape3D
+#   Cube          → BoxShape3D
+#   Image         → WorldBoundaryShape3D
+#   Sphere / others → SphereShape3D
+EMPTY_DRAW_TYPE_TO_SHAPE = {
+    "SINGLE_ARROW": COLLISION_SHAPE_RAY,
+    "CUBE": COLLISION_SHAPE_BOX,
+    "IMAGE": COLLISION_SHAPE_WORLD_BOUNDARY,
+    "SPHERE": COLLISION_SHAPE_SPHERE,
+    "PLAIN_AXES": COLLISION_SHAPE_SPHERE,
+    "ARROWS": COLLISION_SHAPE_SPHERE,
+    "CIRCLE": COLLISION_SHAPE_SPHERE,
+    "CONE": COLLISION_SHAPE_SPHERE,
+}
+
+# EnumProperty items for the UI dropdown (identifier, name, description)
+COLLISION_SHAPE_ITEMS = [
+    (
+        COLLISION_SHAPE_AUTO,
+        "Auto (from Draw Type)",
+        "Derive the collision shape from the Empty's display type",
+    ),
+    (COLLISION_SHAPE_BOX, "Box", "BoxShape3D – axis-aligned box collision"),
+    (COLLISION_SHAPE_SPHERE, "Sphere", "SphereShape3D – spherical collision"),
+    (COLLISION_SHAPE_CAPSULE, "Capsule", "CapsuleShape3D – capsule collision"),
+    (COLLISION_SHAPE_CYLINDER, "Cylinder", "CylinderShape3D – cylinder collision"),
+    (
+        COLLISION_SHAPE_RAY,
+        "Separation Ray",
+        "SeparationRayShape3D – ray used for separation",
+    ),
+    (
+        COLLISION_SHAPE_WORLD_BOUNDARY,
+        "World Boundary",
+        "WorldBoundaryShape3D – infinite plane collision",
+    ),
+]
+
+# Collision messages
+ERROR_COLLISION_NOT_EMPTY = "Object is not an Empty"
+SUCCESS_COLLISION_APPLIED = "Collision shape metadata applied to '{name}'"
+SUCCESS_COLLISION_REMOVED = "Collision shape metadata removed from '{name}'"
 
 # UI List split factors for chain display
 # These define the proportional widths of different sections in the chain list
