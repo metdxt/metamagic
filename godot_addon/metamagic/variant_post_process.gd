@@ -1,12 +1,15 @@
 extends EditorScenePostImportPlugin
 ## Post-import plugin that detects variant metadata written by the Metamagic
-## Blender addon and sets up variant switching in the imported scene.
+## Blender addon and packs each variant subtree into an embedded PackedScene.
 ##
 ## For every variant group found it:
-##   1. Hides non-default variant branches.
-##   2. Stores a serialisable config dictionary as metadata on the scene root.
-##   3. Attaches the variant_switcher.gd tool script so the user can pick
-##      variants from the Inspector.
+##   1. Packs each variant branch into a PackedScene resource.
+##   2. Removes the original variant nodes from the scene tree.
+##   3. Stores the PackedScene resources and a serialisable config dictionary
+##      as metadata on the scene root.
+##   4. Attaches the variant_switcher.gd tool script so the user can pick
+##      variants from the Inspector; only the selected variant is instantiated
+##      at any given time rather than keeping every variant loaded and hidden.
 
 
 func _post_process(scene: Node) -> void:
@@ -14,8 +17,8 @@ func _post_process(scene: Node) -> void:
 	if groups.is_empty():
 		return
 
-	var config := _build_config(scene, groups)
-	_apply_default_visibility(groups)
+	var config := _build_config_and_pack(scene, groups)
+	_remove_variant_nodes(groups)
 
 	# Persist config so the tool script can read it at edit-time.
 	scene.set_meta("_metamagic_variants", config)
@@ -74,20 +77,21 @@ func _collect_variant_groups(scene: Node) -> Dictionary:
 
 
 # ---------------------------------------------------------------------------
-#   Config building
+#   Config building & packing
 # ---------------------------------------------------------------------------
 
-func _build_config(scene: Node, groups: Dictionary) -> Dictionary:
-	"""Build a plain Dictionary that can be stored as node metadata and
-	later consumed by variant_switcher.gd.
+func _build_config_and_pack(scene: Node, groups: Dictionary) -> Dictionary:
+	"""Build a config dictionary that stores an embedded PackedScene for each
+	variant alongside the human-readable metadata.
 
 	Structure::
 
 	    {
 	        "<group_name>": {
-	            "paths":         [NodePath, ...],   # scene-relative paths
-	            "names":         [String, ...],      # human-readable names
-	            "default_index": int,                # index of the default variant
+	            "scenes":        [PackedScene, ...],  # embedded packed scenes
+	            "names":         [String, ...],       # human-readable names
+	            "default_index": int,                 # index of the default variant
+	            "parent_path":   String,              # scene-relative path to the parent node
 	        },
 	        ...
 	    }
@@ -99,46 +103,106 @@ func _build_config(scene: Node, groups: Dictionary) -> Dictionary:
 		var g: Dictionary    = groups[group_name]
 		var default_node     = g["default_node"]
 		var nodes: Array     = g["nodes"]
-		var paths: Array     = []
+		var scenes: Array    = []
 		var names: Array     = []
 		var default_idx: int = 0
 
+		# All variants in a group are assumed to be siblings.  Use the
+		# default variant's parent as the instantiation target, falling
+		# back to the first variant's parent.
+		var ref_node: Node = default_node if default_node != null else (nodes[0] if not nodes.is_empty() else null)
+		var parent_path: String = "."
+		if ref_node:
+			var parent := ref_node.get_parent()
+			if parent and parent != scene:
+				parent_path = str(scene.get_path_to(parent))
+
 		for i in range(nodes.size()):
 			var node: Node = nodes[i]
-			paths.append(str(scene.get_path_to(node)))
+			var packed := _pack_subtree(node as Node3D)
+			if packed:
+				scenes.append(packed)
+			else:
+				# Fallback: store null so indices stay aligned.
+				scenes.append(null)
+
 			names.append(node.name as String)
+
 			if node == default_node:
 				default_idx = i
 
 		# Fallback – treat the first node as the default when none was
 		# explicitly marked in Blender.
-		if default_node == null and not paths.is_empty():
+		if default_node == null and not nodes.is_empty():
 			default_idx = 0
 
 		config[group_name] = {
-			"paths":         paths,
+			"scenes":        scenes,
 			"names":         names,
 			"default_index": default_idx,
+			"parent_path":   parent_path,
 		}
 
 	return config
 
 
+func _pack_subtree(node: Node3D) -> PackedScene:
+	"""Duplicate a node's entire subtree and pack it into a new PackedScene.
+
+	The duplicate is used so that the original node (still part of the
+	imported scene tree) is not disturbed until we explicitly remove it
+	later.  Ownership is reassigned so that ``PackedScene.pack()`` picks
+	up every descendant."""
+
+	var dupe := node.duplicate()
+
+	# pack() only serialises nodes whose owner == the root passed to pack().
+	# After duplicate() the owner references are stale, so reset them.
+	_set_owner_recursive(dupe, dupe)
+
+	var packed := PackedScene.new()
+	var err := packed.pack(dupe)
+
+	# The duplicate was only needed for packing – discard it.
+	dupe.free()
+
+	if err != OK:
+		push_warning("[Metamagic] Failed to pack variant subtree '%s': %s" % [node.name, error_string(err)])
+		return null
+
+	return packed
+
+
 # ---------------------------------------------------------------------------
-#   Visibility
+#   Tree cleanup
 # ---------------------------------------------------------------------------
 
-func _apply_default_visibility(groups: Dictionary) -> void:
-	"""Hide every variant that is not the default for its group."""
+func _remove_variant_nodes(groups: Dictionary) -> void:
+	"""Remove the original variant nodes from the imported scene tree.
+
+	This is safe because each subtree has already been packed into a
+	PackedScene stored in the config metadata."""
 
 	for group_name in groups:
-		var g: Dictionary = groups[group_name]
-		var default_node  = g["default_node"]
+		var nodes: Array = groups[group_name]["nodes"]
+		for node in nodes:
+			var parent: Node = node.get_parent()
+			if parent == null:
+				# Cannot remove the scene root itself.
+				push_warning("[Metamagic] Variant node '%s' is the scene root and cannot be removed." % node.name)
+				continue
+			parent.remove_child(node)
+			node.free()
 
-		# Fallback to first node.
-		if default_node == null and not g["nodes"].is_empty():
-			default_node = g["nodes"][0]
 
-		for node in g["nodes"]:
-			if node is Node3D:
-				node.visible = (node == default_node)
+# ---------------------------------------------------------------------------
+#   Utility
+# ---------------------------------------------------------------------------
+
+func _set_owner_recursive(node: Node, owner: Node) -> void:
+	"""Recursively assign *owner* to every descendant of *node* so that
+	``PackedScene.pack()`` will include the full subtree."""
+
+	for child in node.get_children():
+		child.owner = owner
+		_set_owner_recursive(child, owner)

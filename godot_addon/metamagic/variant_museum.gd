@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## For every variant group the generator:
 ##   1. Removes any previously generated museum nodes (safe to re-run).
-##   2. Makes all variants visible.
+##   2. Instantiates each variant from its embedded [PackedScene].
 ##   3. Spaces them out along the X axis (using mesh AABBs for sizing).
 ##   4. Adds [Label3D] captions above each variant and each group row.
 ##   5. Strips the variant switcher script and saves the scene.
@@ -63,7 +63,7 @@ static func generate() -> Error:
 	# ---- clean up previous run (idempotent) --------------------------------
 	_cleanup_museum_nodes(root)
 
-	# ---- strip the variant switcher so it doesn't re-hide anything ---------
+	# ---- strip the variant switcher so it doesn't re-instantiate anything --
 	if root.get_script():
 		root.set_script(null)
 
@@ -72,23 +72,39 @@ static func generate() -> Error:
 
 	for group_name: String in config:
 		var group: Dictionary = config[group_name]
-		var paths: Array = group.get("paths", [])
+		var scenes: Array = group.get("scenes", [])
 		var names: Array = group.get("names", [])
 
-		if paths.is_empty():
+		if scenes.is_empty():
 			continue
 
-		# Gather nodes & their bounding boxes.
+		# Instantiate every variant from its PackedScene and gather AABBs.
 		var nodes: Array[Node3D] = []
 		var aabbs: Array[AABB] = []
 
-		for p in paths:
-			var node := root.get_node_or_null(NodePath(p as String)) as Node3D
-			nodes.append(node) # may be null
-			if node:
-				aabbs.append(_compute_subtree_aabb(node))
-			else:
+		for i in range(scenes.size()):
+			var packed: PackedScene = scenes[i] as PackedScene
+			if packed == null:
+				nodes.append(null)
 				aabbs.append(AABB(Vector3.ZERO, Vector3(FALLBACK_SIZE, FALLBACK_SIZE, FALLBACK_SIZE)))
+				continue
+
+			var instance := packed.instantiate() as Node3D
+			if instance == null:
+				nodes.append(null)
+				aabbs.append(AABB(Vector3.ZERO, Vector3(FALLBACK_SIZE, FALLBACK_SIZE, FALLBACK_SIZE)))
+				continue
+
+			# Tag the instance so _cleanup_museum_nodes can remove it.
+			instance.set_meta(MUSEUM_META, true)
+
+			# Add to the scene tree under root so transforms resolve.
+			root.add_child(instance)
+			instance.owner = root
+			_set_owner_recursive(instance, root)
+
+			nodes.append(instance)
+			aabbs.append(_compute_subtree_aabb(instance))
 
 		# Compute the row height & depth for group label placement.
 		var row_max_height := 0.0
@@ -166,7 +182,7 @@ static func generate() -> Error:
 # ---------------------------------------------------------------------------
 
 ## Remove all nodes tagged with [constant MUSEUM_META] so the tool can be
-## re-run without duplicating labels.
+## re-run without duplicating labels or leftover variant instances.
 static func _cleanup_museum_nodes(root: Node) -> void:
 	var to_remove: Array[Node] = []
 	for child in root.find_children("*"):
@@ -219,6 +235,14 @@ static func _compute_subtree_aabb(node: Node3D) -> AABB:
 		)
 
 	return result
+
+
+## Recursively set owner on all descendants so they are included when
+## the scene is saved.
+static func _set_owner_recursive(node: Node, owner: Node) -> void:
+	for child in node.get_children():
+		child.owner = owner
+		_set_owner_recursive(child, owner)
 
 
 ## Sanitise a string for use as a node name.
