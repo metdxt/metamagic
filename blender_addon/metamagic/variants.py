@@ -34,6 +34,7 @@ from typing import Optional, Set, Tuple
 import bpy
 from bpy.app.handlers import persistent
 from bpy.props import (
+    BoolProperty,
     CollectionProperty,
     IntProperty,
     PointerProperty,
@@ -134,6 +135,7 @@ def sync_variant_custom_properties(scene: bpy.types.Scene) -> None:
                 "is_default": member.obj.name == default_name,
                 "variants": variant_names,
                 "default": default_name,
+                "optional": group.optional,
             }
             member.obj[VARIANT_CONFIG_KEY] = json.dumps(data)
 
@@ -217,12 +219,23 @@ def _on_variant_data_changed(self, context):
 
 def _on_default_index_changed(self, context):
     """Fires when the user changes which variant is the default."""
-    # Clamp to valid range.
+    # Clamp to valid range.  Optional groups allow -1 (no default → nothing shown).
+    min_val = -1 if self.optional else 0
     if len(self.members) > 0:
-        self["default_index"] = max(0, min(self.default_index, len(self.members) - 1))
+        self["default_index"] = max(
+            min_val, min(self.default_index, len(self.members) - 1)
+        )
     else:
-        self["default_index"] = 0
+        self["default_index"] = min_val
 
+    _on_variant_data_changed(self, context)
+
+
+def _on_optional_changed(self, context):
+    """Fires when the user toggles the *optional* flag on a group."""
+    if not self.optional and self.default_index < 0:
+        # Turning off optional while "None" is selected → fall back to first member.
+        self.default_index = 0  # triggers _on_default_index_changed
     _on_variant_data_changed(self, context)
 
 
@@ -262,6 +275,17 @@ class VariantGroupProperty(PropertyGroup):
         description="Human‑readable name for this variant group (also used as the Godot property name)",
         default="VariantGroup",
         update=_on_variant_data_changed,
+    )
+
+    optional: BoolProperty(
+        name="Optional",
+        description=(
+            "When enabled the variant group can have no active variant. "
+            'In the Godot inspector a "(None)" choice is added and, if '
+            "selected, no variant is instantiated at all"
+        ),
+        default=False,
+        update=_on_optional_changed,
     )
 
     members: CollectionProperty(
@@ -311,8 +335,9 @@ class VariantGroupProperty(PropertyGroup):
         self.members.remove(index)
 
         # Keep default_index in range.
+        min_val = -1 if self.optional else 0
         if self.default_index >= len(self.members):
-            self.default_index = max(0, len(self.members) - 1)
+            self.default_index = max(min_val, len(self.members) - 1)
         if self.active_member_index >= len(self.members):
             self.active_member_index = max(0, len(self.members) - 1)
 
@@ -326,11 +351,14 @@ class VariantGroupProperty(PropertyGroup):
             if m.obj:
                 default_name = m.obj.name
 
-        return {
+        data = {
             "name": self.name,
             "variants": [m.obj.name for m in self.members if m.obj],
             "default": default_name,
         }
+        if self.optional:
+            data["optional"] = True
+        return data
 
 
 class VariantConfigProperty(PropertyGroup):

@@ -43,7 +43,7 @@ func _collect_variant_groups(scene: Node) -> Dictionary:
 	if scene is Node3D:
 		all_nodes.push_back(scene)
 
-	# group_name -> { "nodes": Array[Node3D], "default_node": Node3D | null }
+	# group_name -> { "nodes": Array[Node3D], "default_node": Node3D | null, "optional": bool }
 	var groups: Dictionary = {}
 
 	for node in all_nodes:
@@ -61,12 +61,17 @@ func _collect_variant_groups(scene: Node) -> Dictionary:
 
 		var group_name: String = data.get("group", "")
 		var is_default: bool  = data.get("is_default", false)
+		var is_optional: bool = data.get("optional", false)
 
 		if group_name.is_empty():
 			continue
 
 		if not groups.has(group_name):
-			groups[group_name] = { "nodes": [], "default_node": null }
+			groups[group_name] = { "nodes": [], "default_node": null, "optional": false }
+
+		# Any member flagging optional=true makes the whole group optional.
+		if is_optional:
+			groups[group_name]["optional"] = true
 
 		groups[group_name]["nodes"].append(node)
 
@@ -136,11 +141,19 @@ func _build_config_and_pack(scene: Node, groups: Dictionary) -> Dictionary:
 		if default_node == null and not nodes.is_empty():
 			default_idx = 0
 
+		var is_optional: bool = g.get("optional", false)
+
+		# Optional groups with no explicit default → default_index = -1
+		# so the switcher starts with nothing instantiated.
+		if is_optional and default_node == null:
+			default_idx = -1
+
 		config[group_name] = {
 			"scenes":        scenes,
 			"names":         names,
 			"default_index": default_idx,
 			"parent_path":   parent_path,
+			"optional":      is_optional,
 		}
 
 	return config

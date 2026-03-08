@@ -249,7 +249,11 @@ class VARIANTS_OT_set_default(Operator):
             self.report({"WARNING"}, "Invalid member index")
             return {"CANCELLED"}
 
-        group.default_index = self.member_index
+        # Optional groups: clicking the current default toggles it off (→ None).
+        if group.optional and group.default_index == self.member_index:
+            group.default_index = -1
+        else:
+            group.default_index = self.member_index
         sync_variant_custom_properties(context.scene)
         update_viewport_visibility(context.scene)
         return {"FINISHED"}
@@ -272,6 +276,14 @@ class VARIANTS_OT_preview_variant(Operator):
     def execute(self, context):
         config = context.scene.variant_config
         group = config.groups[config.active_group_index]
+
+        # -1 means "preview nothing" (only valid for optional groups).
+        if self.variant_index == -1:
+            for member in group.members:
+                if member.obj:
+                    _set_subtree_visibility(member.obj, hidden=True)
+            self.report({"INFO"}, "Previewing: (None)")
+            return {"FINISHED"}
 
         if self.variant_index < 0 or self.variant_index >= len(group.members):
             self.report({"WARNING"}, "Invalid variant index")
@@ -388,9 +400,10 @@ class METAMAGIC_PT_variants(Panel):
         if 0 <= config.active_group_index < len(config.groups):
             group = config.groups[config.active_group_index]
 
-            # Group name (editable)
+            # Group name (editable) & optional flag
             name_box = layout.box()
             name_box.prop(group, "name", text="Group Name", icon="GREASEPENCIL")
+            name_box.prop(group, "optional", icon="GHOST_ENABLED")
 
             # --- Members list ---
             members_box = layout.box()
@@ -430,7 +443,9 @@ class METAMAGIC_PT_variants(Panel):
             info_box.label(text="Default Variant", icon="SOLO_ON")
 
             if len(group.members) > 0:
-                if 0 <= group.default_index < len(group.members):
+                if group.default_index == -1 and group.optional:
+                    default_name = "(None – no variant shown)"
+                elif 0 <= group.default_index < len(group.members):
                     default_member = group.members[group.default_index]
                     default_name = (
                         default_member.obj.name if default_member.obj else "(empty)"
@@ -438,7 +453,10 @@ class METAMAGIC_PT_variants(Panel):
                 else:
                     default_name = "(none)"
                 info_box.label(text=f"  Current: {default_name}", icon="CHECKMARK")
-                info_box.label(text="Click the star icon to change", icon="INFO")
+                if group.optional:
+                    info_box.label(text="Click star to set/unset default", icon="INFO")
+                else:
+                    info_box.label(text="Click the star icon to change", icon="INFO")
             else:
                 info_box.label(text="Add objects to set a default", icon="INFO")
 
@@ -453,6 +471,18 @@ class METAMAGIC_PT_variants(Panel):
                     even_rows=True,
                     align=True,
                 )
+
+                # Optional groups get a "(None)" preview button.
+                if group.optional:
+                    op = grid.operator(
+                        "variants.preview_variant",
+                        text="(None)",
+                        icon="GHOST_ENABLED"
+                        if group.default_index == -1
+                        else "GHOST_DISABLED",
+                    )
+                    op.variant_index = -1
+
                 for i, member in enumerate(group.members):
                     name = member.obj.name if member.obj else f"Slot {i}"
                     op = grid.operator(

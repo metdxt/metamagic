@@ -48,7 +48,9 @@ func _reload_config() -> void:
 	for group_name in _config:
 		if not _selections.has(group_name):
 			var group: Dictionary = _config[group_name]
-			_selections[group_name] = group.get("default_index", 0)
+			var default_idx: int = group.get("default_index", 0)
+			# Optional groups may legitimately default to -1 (nothing shown).
+			_selections[group_name] = default_idx
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +72,15 @@ func _get_property_list() -> Array[Dictionary]:
 		if names.is_empty():
 			continue
 
+		var is_optional: bool = group.get("optional", false)
+
 		# Build the comma-separated enum hint string.
-		var hint_string := ",".join(PackedStringArray(names))
+		# Optional groups get a leading "(None)" entry so the user can
+		# deselect all variants.
+		var enum_names := PackedStringArray(names)
+		if is_optional:
+			enum_names = PackedStringArray(["(None)"]) + enum_names
+		var hint_string := ",".join(enum_names)
 
 		properties.append({
 			"name":  "variants/" + group_name,
@@ -93,7 +102,17 @@ func _set(property: StringName, value: Variant) -> bool:
 	if not _config.has(group_name):
 		return false
 
-	_selections[group_name] = value as int
+	var group: Dictionary = _config[group_name]
+	var is_optional: bool = group.get("optional", false)
+
+	# For optional groups the enum is offset by 1 because index 0 is "(None)".
+	# Translate the UI enum value back to our internal convention where -1 means
+	# nothing selected and 0+ are real variant indices.
+	var internal: int = value as int
+	if is_optional:
+		internal -= 1
+
+	_selections[group_name] = internal
 	_apply_group(group_name)
 	return true
 
@@ -107,7 +126,14 @@ func _get(property: StringName) -> Variant:
 	if not _config.has(group_name):
 		return null
 
-	return _selections.get(group_name, 0)
+	var group: Dictionary = _config[group_name]
+	var is_optional: bool = group.get("optional", false)
+	var internal: int = _selections.get(group_name, 0)
+
+	# Translate internal index → enum index (offset by 1 for optional groups).
+	if is_optional:
+		return internal + 1
+	return internal
 
 
 func _property_can_revert(property: StringName) -> bool:
@@ -123,7 +149,13 @@ func _property_get_revert(property: StringName) -> Variant:
 	var group_name: String = (property as String).substr("variants/".length())
 	if not _config.has(group_name):
 		return null
-	return _config[group_name].get("default_index", 0)
+	var group: Dictionary = _config[group_name]
+	var is_optional: bool = group.get("optional", false)
+	var default_idx: int = group.get("default_index", 0)
+	# Translate to enum index for optional groups.
+	if is_optional:
+		return default_idx + 1
+	return default_idx
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +175,6 @@ func _apply_group(group_name: String) -> void:
 	var scenes: Array = group.get("scenes", [])
 	var selected: int = _selections.get(group_name, 0)
 
-	if selected < 0 or selected >= scenes.size():
-		return
-
 	# Resolve the parent node where the internal container should live.
 	var parent_path: String = group.get("parent_path", ".")
 	var parent := get_node_or_null(NodePath(parent_path))
@@ -154,6 +183,10 @@ func _apply_group(group_name: String) -> void:
 
 	# Free the previous instance (container stays).
 	_free_instance(group_name)
+
+	# -1 means "no variant shown" (optional group with nothing selected).
+	if selected < 0 or selected >= scenes.size():
+		return
 
 	# Instantiate the selected variant.
 	var packed: PackedScene = scenes[selected] as PackedScene
